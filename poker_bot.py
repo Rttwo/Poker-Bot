@@ -10,38 +10,52 @@ MAX_PLAYERS = 9
 
 logging.basicConfig(level=logging.INFO)
 
+# { chat_id: { message_id, yes: [], maybe: [], no: [] } }
 games = {}
 
 
-def build_message(players: list):
-    count = len(players)
+def build_message(yes: list, maybe: list, no: list):
+    count = len(yes)
 
     if count == 0:
-        status = "⏳ Пока никого нет — будь первым!"
+        status = "⏳ Ждём игроков..."
     elif count < MIN_PLAYERS:
         status = f"⏳ Нужно ещё {MIN_PLAYERS - count} чел. чтобы игра состоялась"
     else:
         status = "✅ Покер состоится!"
 
     suits = ["♠", "♥", "♦", "♣", "♠", "♥", "♦", "♣", "♠"]
-    players_text = ""
-    for i, name in enumerate(players):
-        players_text += f"\n{i+1}. {suits[i]} {name}"
+
+    yes_text = ""
+    for i, name in enumerate(yes):
+        yes_text += f"\n  {i+1}. {suits[i]} {name}"
+
+    maybe_text = ""
+    for name in maybe:
+        maybe_text += f"\n  🤔 {name}"
+
+    no_text = ""
+    for name in no:
+        no_text += f"\n  ❌ {name}"
 
     text = (
         f"🃏 Покер сегодня!\n"
         f"━━━━━━━━━━━━━━━\n"
-        f"👥 Записалось: {count} / {MAX_PLAYERS}\n"
-        f"{status}"
-        f"{players_text if players_text else chr(10) + '(список пуст)'}"
+        f"{status}\n\n"
+        f"✅ Идут ({len(yes)}/{MAX_PLAYERS}):{yes_text if yes_text else ' —'}\n\n"
+        f"🤔 Возможно ({len(maybe)}):{maybe_text if maybe_text else ' —'}\n\n"
+        f"❌ Не идут ({len(no)}):{no_text if no_text else ' —'}"
     )
 
-    keyboard = []
-    if count < MAX_PLAYERS:
-        keyboard.append(InlineKeyboardButton("✋ Я играю", callback_data="join"))
-    keyboard.append(InlineKeyboardButton("❌ Не иду", callback_data="leave"))
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Иду", callback_data="yes"),
+            InlineKeyboardButton("🤔 Возможно", callback_data="maybe"),
+            InlineKeyboardButton("❌ Не иду", callback_data="no"),
+        ]
+    ]
 
-    return text, InlineKeyboardMarkup([keyboard])
+    return text, InlineKeyboardMarkup(keyboard)
 
 
 async def poker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -53,9 +67,9 @@ async def poker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-    games[chat_id] = {"players": [], "message_id": None}
+    games[chat_id] = {"yes": [], "maybe": [], "no": [], "message_id": None}
 
-    text, markup = build_message([])
+    text, markup = build_message([], [], [])
     msg = await update.message.reply_text(text, reply_markup=markup)
     games[chat_id]["message_id"] = msg.message_id
 
@@ -79,26 +93,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Сначала создай игру командой /poker", show_alert=True)
         return
 
-    players = games[chat_id]["players"]
+    game = games[chat_id]
 
-    if query.data == "join":
-        if name in players:
-            await query.answer("Ты уже в списке! 👀", show_alert=True)
-            return
-        if len(players) >= MAX_PLAYERS:
+    # Убираем из всех списков
+    for key in ["yes", "maybe", "no"]:
+        if name in game[key]:
+            game[key].remove(name)
+
+    if query.data == "yes":
+        if len(game["yes"]) >= MAX_PLAYERS:
             await query.answer("Стол заполнен!", show_alert=True)
             return
-        players.append(name)
-        await query.answer("Ты записан! Удачи 🃏")
+        game["yes"].append(name)
+        await query.answer("Ты идёшь! 🃏")
 
-    elif query.data == "leave":
-        if name not in players:
-            await query.answer("Тебя и так нет в списке", show_alert=True)
-            return
-        players.remove(name)
-        await query.answer("Ты вышел из игры")
+    elif query.data == "maybe":
+        game["maybe"].append(name)
+        await query.answer("Понял, возможно придёшь 🤔")
 
-    text, markup = build_message(players)
+    elif query.data == "no":
+        game["no"].append(name)
+        await query.answer("Жаль, в другой раз! ❌")
+
+    text, markup = build_message(game["yes"], game["maybe"], game["no"])
     await query.edit_message_text(text, reply_markup=markup)
 
 
