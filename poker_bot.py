@@ -5,7 +5,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 import os
 
 # Токен берётся из переменной окружения (Railway → Variables → BOT_TOKEN)
-BOT_TOKEN = os.environ.get("8548385762:AAGwnU739zrnaRLRhI235aC8E8jGToilWy0")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 MIN_PLAYERS = 5
 MAX_PLAYERS = 9
