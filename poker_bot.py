@@ -9,7 +9,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 MIN_PLAYERS = 5
 MAX_PLAYERS = 9
 
-POKER_IMAGE = "https://images.unsplash.com/photo-1541278107931-e006523892df?w=800"
+POKER_IMAGE = "https://i.postimg.cc/nzGR9GWG/poker-image.jpg"
 
 logging.basicConfig(level=logging.INFO)
 
