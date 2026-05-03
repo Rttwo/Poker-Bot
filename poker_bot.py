@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime, time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
@@ -8,10 +9,24 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 MIN_PLAYERS = 5
 MAX_PLAYERS = 9
 
+POKER_IMAGE = "https://images.unsplash.com/photo-1541278107931-e006523892df?w=800"
+
 logging.basicConfig(level=logging.INFO)
 
-# { chat_id: { message_id, yes: [], maybe: [], no: [] } }
+# { chat_id: { message_id, yes: [], maybe: [], no: [], date: "YYYY-MM-DD" } }
 games = {}
+
+
+def get_today():
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+def get_or_create_game(chat_id):
+    today = get_today()
+    if chat_id not in games or games[chat_id]["date"] != today:
+        # Новый день — сбрасываем
+        games[chat_id] = {"yes": [], "maybe": [], "no": [], "message_id": None, "date": today}
+    return games[chat_id]
 
 
 def build_message(yes: list, maybe: list, no: list):
@@ -28,7 +43,7 @@ def build_message(yes: list, maybe: list, no: list):
 
     yes_text = ""
     for i, name in enumerate(yes):
-        yes_text += f"\n  {i+1}. {suits[i]} {name}"
+        yes_text += f"\n  {i+1}. {suits[i % 4]} {name}"
 
     maybe_text = ""
     for name in maybe:
@@ -38,8 +53,10 @@ def build_message(yes: list, maybe: list, no: list):
     for name in no:
         no_text += f"\n  ❌ {name}"
 
+    today = datetime.now().strftime("%d.%m.%Y")
+
     text = (
-        f"🃏 Покер сегодня!\n"
+        f"🃏 Покер — {today}\n"
         f"━━━━━━━━━━━━━━━\n"
         f"{status}\n\n"
         f"✅ Идут ({len(yes)}/{MAX_PLAYERS}):{yes_text if yes_text else ' —'}\n\n"
@@ -60,18 +77,28 @@ def build_message(yes: list, maybe: list, no: list):
 
 async def poker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    game = get_or_create_game(chat_id)
 
-    if chat_id in games:
+    # Удаляем старое сообщение если есть
+    if game["message_id"]:
         try:
-            await context.bot.delete_message(chat_id, games[chat_id]["message_id"])
+            await context.bot.delete_message(chat_id, game["message_id"])
         except Exception:
             pass
 
-    games[chat_id] = {"yes": [], "maybe": [], "no": [], "message_id": None}
+    text, markup = build_message(game["yes"], game["maybe"], game["no"])
 
-    text, markup = build_message([], [], [])
-    msg = await update.message.reply_text(text, reply_markup=markup)
-    games[chat_id]["message_id"] = msg.message_id
+    # Отправляем с картинкой
+    try:
+        msg = await update.message.reply_photo(
+            photo=POKER_IMAGE,
+            caption=text,
+            reply_markup=markup
+        )
+    except Exception:
+        msg = await update.message.reply_text(text, reply_markup=markup)
+
+    game["message_id"] = msg.message_id
 
     try:
         await update.message.delete()
@@ -89,13 +116,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.last_name:
         name += f" {user.last_name}"
 
-    if chat_id not in games:
-        await query.answer("Сначала создай игру командой /poker", show_alert=True)
-        return
+    game = get_or_create_game(chat_id)
 
-    game = games[chat_id]
-
-    # Убираем из всех списков
+    # Убираем из всех списков (смена голоса)
     for key in ["yes", "maybe", "no"]:
         if name in game[key]:
             game[key].remove(name)
@@ -116,7 +139,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("Жаль, в другой раз! ❌")
 
     text, markup = build_message(game["yes"], game["maybe"], game["no"])
-    await query.edit_message_text(text, reply_markup=markup)
+
+    # Обновляем caption у фото-сообщения
+    try:
+        await query.edit_message_caption(caption=text, reply_markup=markup)
+    except Exception:
+        try:
+            await query.edit_message_text(text, reply_markup=markup)
+        except Exception:
+            pass
 
 
 def main():
